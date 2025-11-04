@@ -123,37 +123,52 @@ export type Database = {
       location_visits: {
         Row: {
           created_at: string
+          day_of_week: string | null
           day_type: string
           id: string
           lat: number
           lng: number
+          place_id: string | null
           place_name: string | null
           place_type: string
+          time_label: string | null
           time_of_day: string
+          time_window: string | null
+          types: string[] | null
           user_id: string
           visited_at: string
         }
         Insert: {
           created_at?: string
+          day_of_week?: string | null
           day_type: string
           id?: string
           lat: number
           lng: number
+          place_id?: string | null
           place_name?: string | null
           place_type: string
+          time_label?: string | null
           time_of_day: string
+          time_window?: string | null
+          types?: string[] | null
           user_id: string
           visited_at?: string
         }
         Update: {
           created_at?: string
+          day_of_week?: string | null
           day_type?: string
           id?: string
           lat?: number
           lng?: number
+          place_id?: string | null
           place_name?: string | null
           place_type?: string
+          time_label?: string | null
           time_of_day?: string
+          time_window?: string | null
+          types?: string[] | null
           user_id?: string
           visited_at?: string
         }

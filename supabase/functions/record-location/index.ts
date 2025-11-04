@@ -10,7 +10,31 @@ interface LocationRequest {
   longitude: number;
 }
 
-// Classify time of day based on hour
+// Get day of week name
+function getDayOfWeek(date: Date): string {
+  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  return days[date.getDay()];
+}
+
+// Get time window in 2-hour buckets
+function getTimeWindow(date: Date): string {
+  const hour = date.getHours();
+  const startHour = Math.floor(hour / 2) * 2;
+  const endHour = startHour + 2;
+  const format = (h: number) => `${h.toString().padStart(2, '0')}:00`;
+  return `${format(startHour)}–${format(endHour)}`;
+}
+
+// Get simplified time label
+function getTimeLabel(date: Date): string {
+  const hour = date.getHours();
+  if (hour >= 5 && hour < 12) return 'Morning';
+  if (hour >= 12 && hour < 17) return 'Afternoon';
+  if (hour >= 17 && hour < 22) return 'Evening';
+  return 'Late Night';
+}
+
+// Classify time of day based on hour (for backward compatibility)
 function getTimeOfDay(date: Date): string {
   const hour = date.getHours();
   if (hour >= 5 && hour < 12) return 'morning';
@@ -25,42 +49,73 @@ function getDayType(date: Date): string {
   return (day === 0 || day === 6) ? 'weekend' : 'weekday';
 }
 
-// Detect place type using Google Maps Reverse Geocoding and Places API
-async function detectPlaceType(lat: number, lng: number): Promise<string> {
+// Fetch place details using Google Places API (New)
+async function fetchPlaceDetails(lat: number, lng: number): Promise<{
+  placeId: string | null;
+  placeName: string | null;
+  placeType: string;
+  types: string[];
+}> {
   const apiKey = Deno.env.get('GOOGLE_MAPS_API_KEY');
   if (!apiKey) {
-    console.warn('GOOGLE_MAPS_API_KEY not set, using default place type');
-    return 'general';
+    console.warn('GOOGLE_MAPS_API_KEY not set, using defaults');
+    return { placeId: null, placeName: null, placeType: 'general', types: [] };
   }
 
   try {
-    // Use reverse geocoding to get nearby places
-    const geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${apiKey}`;
-    const geocodeResponse = await fetch(geocodeUrl);
-    const geocodeData = await geocodeResponse.json();
+    // Use Places API (New) Nearby Search
+    const nearbyUrl = `https://places.googleapis.com/v1/places:searchNearby`;
+    const response = await fetch(nearbyUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': apiKey,
+        'X-Goog-FieldMask': 'places.id,places.displayName,places.types,places.primaryType',
+      },
+      body: JSON.stringify({
+        locationRestriction: {
+          circle: {
+            center: {
+              latitude: lat,
+              longitude: lng,
+            },
+            radius: 50.0, // 50 meters radius
+          },
+        },
+        maxResultCount: 1,
+      }),
+    });
 
-    if (geocodeData.results && geocodeData.results.length > 0) {
-      const types = geocodeData.results[0].types || [];
+    if (!response.ok) {
+      console.error('Places API error:', response.status, await response.text());
+      return { placeId: null, placeName: null, placeType: 'general', types: [] };
+    }
+
+    const data = await response.json();
+    
+    if (data.places && data.places.length > 0) {
+      const place = data.places[0];
+      const placeId = place.id || null;
+      const placeName = place.displayName?.text || null;
+      const types: string[] = place.types || [];
       
-      // Map Google place types to our categories
-      if (types.includes('cafe') || types.includes('coffee_shop')) return 'cafe';
-      if (types.includes('gym') || types.includes('health')) return 'gym';
-      if (types.includes('library') || types.includes('book_store')) return 'library';
-      if (types.includes('bar') || types.includes('night_club')) return 'bar';
-      if (types.includes('restaurant')) return 'restaurant';
-      if (types.includes('park')) return 'park';
-      if (types.includes('university') || types.includes('school')) return 'education';
-      if (types.includes('store') || types.includes('shopping_mall')) return 'shopping';
+      // Use primaryType if available, otherwise pick most relevant from types
+      let placeType = place.primaryType || 'general';
       
-      // Default based on broader categories
-      if (types.includes('point_of_interest')) return 'poi';
-      if (types.includes('establishment')) return 'establishment';
+      // If no primaryType, prioritize certain types
+      if (!place.primaryType && types.length > 0) {
+        const priorityTypes = ['cafe', 'restaurant', 'gym', 'library', 'bar', 'park', 'shopping_mall'];
+        const foundType = types.find(t => priorityTypes.includes(t));
+        placeType = foundType || types[0];
+      }
+      
+      return { placeId, placeName, placeType, types };
     }
   } catch (error) {
-    console.error('Error detecting place type:', error);
+    console.error('Error fetching place details:', error);
   }
 
-  return 'general';
+  return { placeId: null, placeName: null, placeType: 'general', types: [] };
 }
 
 Deno.serve(async (req) => {
@@ -105,9 +160,21 @@ Deno.serve(async (req) => {
     const now = new Date();
     const timeOfDay = getTimeOfDay(now);
     const dayType = getDayType(now);
-    const placeType = await detectPlaceType(latitude, longitude);
+    const dayOfWeek = getDayOfWeek(now);
+    const timeWindow = getTimeWindow(now);
+    const timeLabel = getTimeLabel(now);
+    
+    // Fetch place details from Google Places API (New)
+    const { placeId, placeName, placeType, types } = await fetchPlaceDetails(latitude, longitude);
 
-    console.log('Recording location visit:', { userId: user.id, placeType, timeOfDay, dayType });
+    console.log('Recording location visit:', { 
+      userId: user.id, 
+      placeType, 
+      placeName,
+      dayOfWeek,
+      timeWindow,
+      timeLabel 
+    });
 
     // Insert location visit (trigger will update activity_patterns)
     const { error: visitError } = await supabase
@@ -116,7 +183,13 @@ Deno.serve(async (req) => {
         user_id: user.id,
         lat: latitude,
         lng: longitude,
+        place_id: placeId,
+        place_name: placeName,
         place_type: placeType,
+        types: types,
+        day_of_week: dayOfWeek,
+        time_window: timeWindow,
+        time_label: timeLabel,
         time_of_day: timeOfDay,
         day_type: dayType,
         visited_at: now.toISOString(),
@@ -168,9 +241,13 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({ 
         success: true, 
+        placeId,
+        placeName,
         placeType,
-        timeOfDay,
-        dayType,
+        types,
+        dayOfWeek,
+        timeWindow,
+        timeLabel,
       }),
       {
         status: 200,
