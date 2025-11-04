@@ -134,7 +134,7 @@ export type Database = {
           time_label: string | null
           time_of_day: string
           time_window: string | null
-          timestamp_utc: string
+          timestamp_utc: string | null
           types: string[] | null
           user_id: string
           user_timezone_at_event: string | null
@@ -153,7 +153,7 @@ export type Database = {
           time_label?: string | null
           time_of_day: string
           time_window?: string | null
-          timestamp_utc: string
+          timestamp_utc?: string | null
           types?: string[] | null
           user_id: string
           user_timezone_at_event?: string | null
@@ -172,7 +172,7 @@ export type Database = {
           time_label?: string | null
           time_of_day?: string
           time_window?: string | null
-          timestamp_utc?: string
+          timestamp_utc?: string | null
           types?: string[] | null
           user_id?: string
           user_timezone_at_event?: string | null

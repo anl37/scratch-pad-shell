@@ -159,6 +159,7 @@ Deno.serve(async (req) => {
 
     // Use provided timestamp or current time
     const eventTimestamp = timestamp_utc ? new Date(timestamp_utc) : new Date();
+    const eventTimestampISO = eventTimestamp.toISOString();
     
     // Detect timezone if not provided
     let timezone = user_timezone_at_event;
@@ -173,7 +174,7 @@ Deno.serve(async (req) => {
       userId: user.id, 
       placeType, 
       placeName,
-      timestamp: eventTimestamp.toISOString(),
+      timestamp_utc: eventTimestampISO,
       timezone,
     });
 
@@ -188,9 +189,9 @@ Deno.serve(async (req) => {
         place_name: placeName,
         place_type: placeType,
         types: types,
-        timestamp_utc: eventTimestamp.toISOString(),
+        timestamp_utc: eventTimestampISO,
         user_timezone_at_event: timezone,
-        visited_at: eventTimestamp.toISOString(),
+        visited_at: eventTimestampISO,
       });
 
     if (visitError) {
