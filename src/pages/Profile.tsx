@@ -60,21 +60,16 @@ const Profile = () => {
       {/* Header */}
       <header className="sticky top-0 z-40 bg-card/95 backdrop-blur-lg border-b border-border shadow-soft">
         <div className="max-w-2xl mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                <User className="w-5 h-5 text-primary" />
-              </div>
-              <div>
-                <h1 className="font-bold text-base">Profile</h1>
-                <p className="text-xs text-muted-foreground">
-                  Your presence & preferences
-                </p>
-              </div>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+              <User className="w-5 h-5 text-primary" />
             </div>
-            <Button variant="ghost" size="icon">
-              <Settings className="w-5 h-5" />
-            </Button>
+            <div>
+              <h1 className="font-bold text-base">Profile</h1>
+              <p className="text-xs text-muted-foreground">
+                Your presence & preferences
+              </p>
+            </div>
           </div>
         </div>
       </header>
@@ -87,10 +82,6 @@ const Profile = () => {
           </div>
           <h2 className="text-xl font-bold text-foreground mb-1">{userName || 'You'}</h2>
           <p className="text-sm text-muted-foreground">{user?.email}</p>
-          
-          <Button variant="outline" className="rounded-full">
-            Edit Profile
-          </Button>
         </div>
 
         {/* Weekly Presence */}
@@ -103,25 +94,40 @@ const Profile = () => {
             <div className="text-center text-sm text-muted-foreground">Loading...</div>
           ) : (
             <>
-              <div className="flex gap-2 justify-between mb-2">
-                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, index) => {
-                  const dayData = weeklyData.find(d => d.day === index);
-                  const today = new Date().getDay();
-                  return (
-                    <HeatmapDay
-                      key={day}
-                      day={day}
-                      count={dayData?.count || 0}
-                      timeOfDay={dayData?.timeOfDay || { morning: 0, afternoon: 0, evening: 0 }}
-                      isToday={index === today}
-                    />
-                  );
-                })}
-              </div>
-              <div className="flex justify-between text-xs text-muted-foreground mb-2">
-                <span>Morning</span>
-                <span>Afternoon</span>
-                <span>Evening</span>
+              <div className="grid grid-cols-[auto_1fr] gap-2">
+                <div className="flex flex-col justify-around text-xs text-muted-foreground py-1">
+                  <span>Morning</span>
+                  <span>Afternoon</span>
+                  <span>Evening</span>
+                </div>
+                <div className="space-y-2">
+                  {['morning', 'afternoon', 'evening'].map((timeOfDay) => (
+                    <div key={timeOfDay} className="flex gap-1">
+                      {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, index) => {
+                        const dayData = weeklyData.find(d => d.day === index);
+                        const count = dayData?.timeOfDay?.[timeOfDay as keyof typeof dayData.timeOfDay] || 0;
+                        const maxCount = Math.max(...weeklyData.flatMap(d => [d.timeOfDay.morning, d.timeOfDay.afternoon, d.timeOfDay.evening]), 1);
+                        const intensity = count === 0 ? 0 : Math.ceil((count / maxCount) * 3);
+                        const bgColors = ['bg-muted', 'bg-primary/30', 'bg-primary/60', 'bg-primary'];
+                        
+                        return (
+                          <div
+                            key={`${day}-${timeOfDay}`}
+                            className={`flex-1 h-8 rounded ${bgColors[intensity]} transition-all flex items-center justify-center text-xs font-medium`}
+                            title={`${day} ${timeOfDay}: ${count} visit${count !== 1 ? 's' : ''}`}
+                          >
+                            {count > 0 && <span className="opacity-70">{count}</span>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
+                  <div className="flex justify-between text-xs text-muted-foreground pt-1">
+                    {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+                      <span key={day} className="flex-1 text-center">{day}</span>
+                    ))}
+                  </div>
+                </div>
               </div>
               <p className="text-xs text-muted-foreground mt-3 text-center">
                 Checked in {weeklyData.reduce((sum, d) => sum + d.count, 0)}× this week
@@ -174,9 +180,8 @@ const Profile = () => {
             <div className="text-sm text-muted-foreground">Loading...</div>
           ) : trends ? (
             <div className="space-y-2 text-sm text-muted-foreground">
-              <p>🌆 You tend to connect in {trends.typicalTimeWindow.split('-')[0].trim()}</p>
-              <p>☕ {trends.connectionStats}</p>
-              <p>📅 Most active on {trends.mostActiveDay}</p>
+              <p>{trends.connectionStats}</p>
+              <p>Most active on {trends.mostActiveDay}, {trends.typicalTimeWindow}</p>
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">Not enough data yet</p>
@@ -257,22 +262,6 @@ const Profile = () => {
               </div>
             </div>
           </Card>
-        </div>
-
-        {/* Settings Options */}
-        <div className="space-y-2">
-          <button className="w-full gradient-card rounded-3xl p-4 text-left hover:shadow-elegant transition-all shadow-soft">
-            <p className="text-sm font-medium text-foreground">Privacy Settings</p>
-            <p className="text-xs text-muted-foreground mt-1">Control who sees you</p>
-          </button>
-          <button className="w-full gradient-card rounded-3xl p-4 text-left hover:shadow-elegant transition-all shadow-soft">
-            <p className="text-sm font-medium text-foreground">Edit Interests</p>
-            <p className="text-xs text-muted-foreground mt-1">Update your activities</p>
-          </button>
-          <button className="w-full gradient-card rounded-3xl p-4 text-left hover:shadow-elegant transition-all shadow-soft">
-            <p className="text-sm font-medium text-foreground">About Spotmate</p>
-            <p className="text-xs text-muted-foreground mt-1">Learn more</p>
-          </button>
         </div>
 
         <p className="text-xs text-center text-muted-foreground pt-4">
