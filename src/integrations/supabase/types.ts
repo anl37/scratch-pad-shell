@@ -134,8 +134,10 @@ export type Database = {
           time_label: string | null
           time_of_day: string
           time_window: string | null
+          timestamp_utc: string
           types: string[] | null
           user_id: string
+          user_timezone_at_event: string | null
           visited_at: string
         }
         Insert: {
@@ -151,8 +153,10 @@ export type Database = {
           time_label?: string | null
           time_of_day: string
           time_window?: string | null
+          timestamp_utc: string
           types?: string[] | null
           user_id: string
+          user_timezone_at_event?: string | null
           visited_at?: string
         }
         Update: {
@@ -168,8 +172,10 @@ export type Database = {
           time_label?: string | null
           time_of_day?: string
           time_window?: string | null
+          timestamp_utc?: string
           types?: string[] | null
           user_id?: string
+          user_timezone_at_event?: string | null
           visited_at?: string
         }
         Relationships: [
@@ -365,6 +371,7 @@ export type Database = {
     }
     Functions: {
       cleanup_stale_presence: { Args: never; Returns: number }
+      day_type_category: { Args: { local_ts: string }; Returns: string }
       generate_pair_id: {
         Args: { user_a: string; user_b: string }
         Returns: string
@@ -373,6 +380,9 @@ export type Database = {
         Args: { target_user_id: string }
         Returns: undefined
       }
+      time_of_day_category: { Args: { local_ts: string }; Returns: string }
+      time_of_day_label: { Args: { local_ts: string }; Returns: string }
+      two_hour_bucket: { Args: { local_ts: string }; Returns: string }
     }
     Enums: {
       [_ in never]: never

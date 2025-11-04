@@ -8,45 +8,40 @@ const corsHeaders = {
 interface LocationRequest {
   latitude: number;
   longitude: number;
+  timestamp_utc?: string;
+  user_timezone_at_event?: string;
 }
 
-// Get day of week name
-function getDayOfWeek(date: Date): string {
-  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  return days[date.getDay()];
-}
+/**
+ * Get timezone from coordinates using Google TimeZone API
+ */
+async function getTimezoneFromCoords(lat: number, lng: number): Promise<string> {
+  const apiKey = Deno.env.get('GOOGLE_MAPS_API_KEY');
+  if (!apiKey) {
+    console.warn('GOOGLE_MAPS_API_KEY not set for timezone detection');
+    return 'UTC';
+  }
 
-// Get time window in 2-hour buckets
-function getTimeWindow(date: Date): string {
-  const hour = date.getHours();
-  const startHour = Math.floor(hour / 2) * 2;
-  const endHour = startHour + 2;
-  const format = (h: number) => `${h.toString().padStart(2, '0')}:00`;
-  return `${format(startHour)}–${format(endHour)}`;
-}
+  try {
+    const timestamp = Math.floor(Date.now() / 1000);
+    const url = `https://maps.googleapis.com/maps/api/timezone/json?location=${lat},${lng}&timestamp=${timestamp}&key=${apiKey}`;
+    
+    const response = await fetch(url);
+    if (!response.ok) {
+      console.error('TimeZone API error:', response.status);
+      return 'UTC';
+    }
 
-// Get simplified time label
-function getTimeLabel(date: Date): string {
-  const hour = date.getHours();
-  if (hour >= 5 && hour < 12) return 'Morning';
-  if (hour >= 12 && hour < 17) return 'Afternoon';
-  if (hour >= 17 && hour < 22) return 'Evening';
-  return 'Late Night';
-}
+    const data = await response.json();
+    if (data.status === 'OK' && data.timeZoneId) {
+      console.log(`Detected timezone: ${data.timeZoneId}`);
+      return data.timeZoneId;
+    }
+  } catch (error) {
+    console.error('Error fetching timezone:', error);
+  }
 
-// Classify time of day based on hour (for backward compatibility)
-function getTimeOfDay(date: Date): string {
-  const hour = date.getHours();
-  if (hour >= 5 && hour < 12) return 'morning';
-  if (hour >= 12 && hour < 17) return 'afternoon';
-  if (hour >= 17 && hour < 21) return 'evening';
-  return 'night';
-}
-
-// Classify day type
-function getDayType(date: Date): string {
-  const day = date.getDay();
-  return (day === 0 || day === 6) ? 'weekend' : 'weekday';
+  return 'UTC';
 }
 
 // Fetch place details using Google Places API (New)
@@ -148,7 +143,12 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { latitude, longitude }: LocationRequest = await req.json();
+    const { 
+      latitude, 
+      longitude, 
+      timestamp_utc, 
+      user_timezone_at_event 
+    }: LocationRequest = await req.json();
 
     if (!latitude || !longitude) {
       return new Response(JSON.stringify({ error: 'Missing latitude or longitude' }), {
@@ -157,12 +157,14 @@ Deno.serve(async (req) => {
       });
     }
 
-    const now = new Date();
-    const timeOfDay = getTimeOfDay(now);
-    const dayType = getDayType(now);
-    const dayOfWeek = getDayOfWeek(now);
-    const timeWindow = getTimeWindow(now);
-    const timeLabel = getTimeLabel(now);
+    // Use provided timestamp or current time
+    const eventTimestamp = timestamp_utc ? new Date(timestamp_utc) : new Date();
+    
+    // Detect timezone if not provided
+    let timezone = user_timezone_at_event;
+    if (!timezone) {
+      timezone = await getTimezoneFromCoords(latitude, longitude);
+    }
     
     // Fetch place details from Google Places API (New)
     const { placeId, placeName, placeType, types } = await fetchPlaceDetails(latitude, longitude);
@@ -171,12 +173,11 @@ Deno.serve(async (req) => {
       userId: user.id, 
       placeType, 
       placeName,
-      dayOfWeek,
-      timeWindow,
-      timeLabel 
+      timestamp: eventTimestamp.toISOString(),
+      timezone,
     });
 
-    // Insert location visit (trigger will update activity_patterns)
+    // Insert location visit - trigger will auto-fill time fields
     const { error: visitError } = await supabase
       .from('location_visits')
       .insert({
@@ -187,12 +188,9 @@ Deno.serve(async (req) => {
         place_name: placeName,
         place_type: placeType,
         types: types,
-        day_of_week: dayOfWeek,
-        time_window: timeWindow,
-        time_label: timeLabel,
-        time_of_day: timeOfDay,
-        day_type: dayType,
-        visited_at: now.toISOString(),
+        timestamp_utc: eventTimestamp.toISOString(),
+        user_timezone_at_event: timezone,
+        visited_at: eventTimestamp.toISOString(),
       });
 
     if (visitError) {
@@ -238,6 +236,15 @@ Deno.serve(async (req) => {
       console.error('Error recalculating frequency scores:', recalcError);
     }
 
+    // Query the inserted record to get computed time fields
+    const { data: visitData } = await supabase
+      .from('location_visits')
+      .select('day_of_week, time_window, time_label')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+
     return new Response(
       JSON.stringify({ 
         success: true, 
@@ -245,9 +252,11 @@ Deno.serve(async (req) => {
         placeName,
         placeType,
         types,
-        dayOfWeek,
-        timeWindow,
-        timeLabel,
+        timezone,
+        timestamp_utc: eventTimestamp.toISOString(),
+        dayOfWeek: visitData?.day_of_week,
+        timeWindow: visitData?.time_window,
+        timeLabel: visitData?.time_label,
       }),
       {
         status: 200,

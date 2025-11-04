@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { GeolocationData } from './useGeolocation';
 import { useAuth } from './useAuth';
+import { getCurrentTimezone } from '@/lib/timezone-utils';
 
 interface UseLocationRecordingOptions {
   location: GeolocationData | null;
@@ -10,7 +11,7 @@ interface UseLocationRecordingOptions {
 
 /**
  * Records user location visits in the background to build activity patterns
- * Calls the record-location edge function periodically
+ * Calls the record-location edge function periodically with timezone info
  */
 export const useLocationRecording = ({ location, enabled }: UseLocationRecordingOptions) => {
   const { user } = useAuth();
@@ -31,10 +32,15 @@ export const useLocationRecording = ({ location, enabled }: UseLocationRecording
     const recordLocation = async () => {
       recordingRef.current = true;
       try {
+        // Detect timezone from location
+        const timezone = await getCurrentTimezone(location.lat, location.lng);
+        
         const { error } = await supabase.functions.invoke('record-location', {
           body: {
             latitude: location.lat,
             longitude: location.lng,
+            timestamp_utc: new Date().toISOString(),
+            user_timezone_at_event: timezone,
           },
         });
 
@@ -42,6 +48,7 @@ export const useLocationRecording = ({ location, enabled }: UseLocationRecording
           console.error('[LocationRecording] Error:', error);
         } else {
           lastRecordedRef.current = now;
+          console.log(`[LocationRecording] Logged at ${timezone}`);
         }
       } catch (err) {
         console.error('[LocationRecording] Exception:', err);

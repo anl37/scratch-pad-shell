@@ -1,9 +1,11 @@
 import { formatDistanceToNow, format, isToday, isYesterday, isTomorrow } from "date-fns";
+import { formatInTimezone, getCurrentTimezone } from "./timezone-utils";
 
 /**
  * Format a timestamp as relative time (Now, 1m ago, Today 6:12 PM, etc.)
+ * Uses current user's timezone for display
  */
-export function relativeTime(timestamp: Date | string | number): string {
+export function relativeTime(timestamp: Date | string | number, timezone?: string): string {
   const date = new Date(timestamp);
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
@@ -20,6 +22,25 @@ export function relativeTime(timestamp: Date | string | number): string {
   }
   
   return format(date, 'MMM d, h:mm a');
+}
+
+/**
+ * Format a timestamp in a specific timezone
+ */
+export async function relativeTimeInTimezone(
+  timestamp: Date | string | number,
+  timezone?: string
+): Promise<string> {
+  const tz = timezone || await getCurrentTimezone();
+  const date = new Date(timestamp);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMin = Math.floor(diffMs / 60000);
+
+  if (diffMin < 1) return "Now";
+  if (diffMin < 60) return `${diffMin}m ago`;
+  
+  return formatInTimezone(date, tz);
 }
 
 /**
