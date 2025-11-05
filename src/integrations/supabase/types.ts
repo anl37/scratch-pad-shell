@@ -75,6 +75,8 @@ export type Database = {
           updated_at: string
           user_id: string
           visit_count: number
+          window_end_min: number | null
+          window_start_min: number | null
         }
         Insert: {
           avg_dwell_min?: number
@@ -92,6 +94,8 @@ export type Database = {
           updated_at?: string
           user_id: string
           visit_count?: number
+          window_end_min?: number | null
+          window_start_min?: number | null
         }
         Update: {
           avg_dwell_min?: number
@@ -109,6 +113,8 @@ export type Database = {
           updated_at?: string
           user_id?: string
           visit_count?: number
+          window_end_min?: number | null
+          window_start_min?: number | null
         }
         Relationships: []
       }
@@ -195,6 +201,8 @@ export type Database = {
           time_window: string | null
           user_id: string
           user_timezone: string
+          window_end_min: number | null
+          window_start_min: number | null
         }
         Insert: {
           confidence?: number
@@ -216,6 +224,8 @@ export type Database = {
           time_window?: string | null
           user_id: string
           user_timezone?: string
+          window_end_min?: number | null
+          window_start_min?: number | null
         }
         Update: {
           confidence?: number
@@ -237,6 +247,8 @@ export type Database = {
           time_window?: string | null
           user_id?: string
           user_timezone?: string
+          window_end_min?: number | null
+          window_start_min?: number | null
         }
         Relationships: []
       }
@@ -529,7 +541,72 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      vw_activity_summaries_pretty: {
+        Row: {
+          avg_dwell_min: number | null
+          created_at: string | null
+          day_type: string | null
+          end_time: string | null
+          frequency_share: number | null
+          id: string | null
+          last_visit_at: string | null
+          place_type: string | null
+          recency_score: number | null
+          start_time: string | null
+          summary_date: string | null
+          time_of_day: string | null
+          time_window_label: string | null
+          total_dwell_min: number | null
+          updated_at: string | null
+          user_id: string | null
+          visit_count: number | null
+          window_end_min: number | null
+          window_start_min: number | null
+        }
+        Insert: {
+          avg_dwell_min?: number | null
+          created_at?: string | null
+          day_type?: string | null
+          end_time?: never
+          frequency_share?: number | null
+          id?: string | null
+          last_visit_at?: string | null
+          place_type?: string | null
+          recency_score?: number | null
+          start_time?: never
+          summary_date?: string | null
+          time_of_day?: string | null
+          time_window_label?: string | null
+          total_dwell_min?: number | null
+          updated_at?: string | null
+          user_id?: string | null
+          visit_count?: number | null
+          window_end_min?: number | null
+          window_start_min?: number | null
+        }
+        Update: {
+          avg_dwell_min?: number | null
+          created_at?: string | null
+          day_type?: string | null
+          end_time?: never
+          frequency_share?: number | null
+          id?: string | null
+          last_visit_at?: string | null
+          place_type?: string | null
+          recency_score?: number | null
+          start_time?: never
+          summary_date?: string | null
+          time_of_day?: string | null
+          time_window_label?: string | null
+          total_dwell_min?: number | null
+          updated_at?: string | null
+          user_id?: string | null
+          visit_count?: number | null
+          window_end_min?: number | null
+          window_start_min?: number | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       cleanup_stale_presence: { Args: never; Returns: number }
@@ -541,6 +618,13 @@ export type Database = {
       generate_pair_id: {
         Args: { user_a: string; user_b: string }
         Returns: string
+      }
+      parse_time_window: {
+        Args: { window_str: string }
+        Returns: {
+          end_min: number
+          start_min: number
+        }[]
       }
       recalculate_frequency_scores: {
         Args: { target_user_id: string }
