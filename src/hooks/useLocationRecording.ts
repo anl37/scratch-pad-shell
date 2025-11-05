@@ -35,12 +35,23 @@ export const useLocationRecording = ({ location, enabled }: UseLocationRecording
         // Detect timezone from location
         const timezone = await getCurrentTimezone(location.lat, location.lng);
         
+        // Calculate confidence based on GPS accuracy
+        let confidence = 1.0;
+        if (location.accuracy > 100) {
+          confidence = 0.5;
+        } else if (location.accuracy > 50) {
+          confidence = 0.7;
+        } else if (location.accuracy > 20) {
+          confidence = 0.9;
+        }
+        
         const { error } = await supabase.functions.invoke('record-location', {
           body: {
             latitude: location.lat,
             longitude: location.lng,
             timestamp_utc: new Date().toISOString(),
             user_timezone_at_event: timezone,
+            confidence: confidence,
           },
         });
 
@@ -48,7 +59,7 @@ export const useLocationRecording = ({ location, enabled }: UseLocationRecording
           console.error('[LocationRecording] Error:', error);
         } else {
           lastRecordedRef.current = now;
-          console.log(`[LocationRecording] Logged at ${timezone}`);
+          console.log(`[LocationRecording] Logged at ${timezone} (confidence: ${confidence.toFixed(2)})`);
         }
       } catch (err) {
         console.error('[LocationRecording] Exception:', err);

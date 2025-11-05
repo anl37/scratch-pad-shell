@@ -58,6 +58,60 @@ export type Database = {
           },
         ]
       }
+      activity_summaries: {
+        Row: {
+          avg_dwell_min: number
+          created_at: string
+          day_type: string
+          frequency_share: number
+          id: string
+          last_visit_at: string | null
+          place_type: string
+          recency_score: number
+          summary_date: string
+          time_of_day: string
+          time_window: string
+          total_dwell_min: number
+          updated_at: string
+          user_id: string
+          visit_count: number
+        }
+        Insert: {
+          avg_dwell_min?: number
+          created_at?: string
+          day_type: string
+          frequency_share?: number
+          id?: string
+          last_visit_at?: string | null
+          place_type: string
+          recency_score?: number
+          summary_date: string
+          time_of_day: string
+          time_window: string
+          total_dwell_min?: number
+          updated_at?: string
+          user_id: string
+          visit_count?: number
+        }
+        Update: {
+          avg_dwell_min?: number
+          created_at?: string
+          day_type?: string
+          frequency_share?: number
+          id?: string
+          last_visit_at?: string | null
+          place_type?: string
+          recency_score?: number
+          summary_date?: string
+          time_of_day?: string
+          time_window?: string
+          total_dwell_min?: number
+          updated_at?: string
+          user_id?: string
+          visit_count?: number
+        }
+        Relationships: []
+      }
       compatibility_weights: {
         Row: {
           behavior_weight: number
@@ -120,8 +174,75 @@ export type Database = {
         }
         Relationships: []
       }
+      location_sessions: {
+        Row: {
+          confidence: number
+          created_at: string
+          day_of_week: string | null
+          day_type: string | null
+          dwell_min: number
+          end_ts: string
+          geohash: string
+          id: string
+          lat: number
+          lng: number
+          place_id: string | null
+          place_name: string | null
+          place_type: string
+          start_ts: string
+          time_label: string | null
+          time_of_day: string | null
+          time_window: string | null
+          user_id: string
+          user_timezone: string
+        }
+        Insert: {
+          confidence?: number
+          created_at?: string
+          day_of_week?: string | null
+          day_type?: string | null
+          dwell_min?: number
+          end_ts: string
+          geohash: string
+          id?: string
+          lat: number
+          lng: number
+          place_id?: string | null
+          place_name?: string | null
+          place_type?: string
+          start_ts: string
+          time_label?: string | null
+          time_of_day?: string | null
+          time_window?: string | null
+          user_id: string
+          user_timezone?: string
+        }
+        Update: {
+          confidence?: number
+          created_at?: string
+          day_of_week?: string | null
+          day_type?: string | null
+          dwell_min?: number
+          end_ts?: string
+          geohash?: string
+          id?: string
+          lat?: number
+          lng?: number
+          place_id?: string | null
+          place_name?: string | null
+          place_type?: string
+          start_ts?: string
+          time_label?: string | null
+          time_of_day?: string | null
+          time_window?: string | null
+          user_id?: string
+          user_timezone?: string
+        }
+        Relationships: []
+      }
       location_visits: {
         Row: {
+          confidence: number | null
           created_at: string
           day_of_week: string | null
           day_type: string
@@ -141,6 +262,7 @@ export type Database = {
           visited_at: string
         }
         Insert: {
+          confidence?: number | null
           created_at?: string
           day_of_week?: string | null
           day_type: string
@@ -160,6 +282,7 @@ export type Database = {
           visited_at?: string
         }
         Update: {
+          confidence?: number | null
           created_at?: string
           day_of_week?: string | null
           day_type?: string
@@ -194,6 +317,7 @@ export type Database = {
           id: string
           landmark: string | null
           last_seen_together_at: string | null
+          match_explanation: string | null
           meet_code: string | null
           pair_id: string
           shared_emoji_code: string | null
@@ -210,6 +334,7 @@ export type Database = {
           id?: string
           landmark?: string | null
           last_seen_together_at?: string | null
+          match_explanation?: string | null
           meet_code?: string | null
           pair_id: string
           shared_emoji_code?: string | null
@@ -226,6 +351,7 @@ export type Database = {
           id?: string
           landmark?: string | null
           last_seen_together_at?: string | null
+          match_explanation?: string | null
           meet_code?: string | null
           pair_id?: string
           shared_emoji_code?: string | null
@@ -280,6 +406,42 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      place_cache: {
+        Row: {
+          first_seen_at: string
+          last_used_at: string
+          lat: number
+          lng: number
+          place_id: string
+          place_name: string | null
+          place_type: string
+          types: string[] | null
+          use_count: number
+        }
+        Insert: {
+          first_seen_at?: string
+          last_used_at?: string
+          lat: number
+          lng: number
+          place_id: string
+          place_name?: string | null
+          place_type?: string
+          types?: string[] | null
+          use_count?: number
+        }
+        Update: {
+          first_seen_at?: string
+          last_used_at?: string
+          lat?: number
+          lng?: number
+          place_id?: string
+          place_name?: string | null
+          place_type?: string
+          types?: string[] | null
+          use_count?: number
+        }
+        Relationships: []
       }
       presence: {
         Row: {
@@ -371,6 +533,10 @@ export type Database = {
     }
     Functions: {
       cleanup_stale_presence: { Args: never; Returns: number }
+      compute_activity_summary: {
+        Args: { target_date?: string; target_user_id: string }
+        Returns: undefined
+      }
       day_type_category: { Args: { local_ts: string }; Returns: string }
       generate_pair_id: {
         Args: { user_a: string; user_b: string }
@@ -379,6 +545,10 @@ export type Database = {
       recalculate_frequency_scores: {
         Args: { target_user_id: string }
         Returns: undefined
+      }
+      sessionize_recent_visits: {
+        Args: { gap_threshold_minutes?: number; target_user_id: string }
+        Returns: number
       }
       time_of_day_category: { Args: { local_ts: string }; Returns: string }
       time_of_day_label: { Args: { local_ts: string }; Returns: string }

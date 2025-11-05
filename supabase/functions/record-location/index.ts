@@ -10,6 +10,7 @@ interface LocationRequest {
   longitude: number;
   timestamp_utc?: string;
   user_timezone_at_event?: string;
+  confidence?: number;
 }
 
 /**
@@ -44,8 +45,12 @@ async function getTimezoneFromCoords(lat: number, lng: number): Promise<string> 
   return 'UTC';
 }
 
-// Fetch place details using Google Places API (New)
-async function fetchPlaceDetails(lat: number, lng: number): Promise<{
+// Check place cache first, then fetch from API if needed
+async function getPlaceDetails(
+  supabaseClient: any,
+  lat: number,
+  lng: number
+): Promise<{
   placeId: string | null;
   placeName: string | null;
   placeType: string;
@@ -58,7 +63,51 @@ async function fetchPlaceDetails(lat: number, lng: number): Promise<{
   }
 
   try {
-    // Use Places API (New) Nearby Search
+    // Step 1: Check if we have a cached place within 50m
+    const { data: cachedPlaces } = await supabaseClient
+      .from('place_cache')
+      .select('*')
+      .gte('lat', lat - 0.0005) // ~50m
+      .lte('lat', lat + 0.0005)
+      .gte('lng', lng - 0.0005)
+      .lte('lng', lng + 0.0005)
+      .limit(5);
+
+    if (cachedPlaces && cachedPlaces.length > 0) {
+      // Find closest cached place
+      let closest = cachedPlaces[0];
+      let minDist = Math.hypot(lat - closest.lat, lng - closest.lng);
+      
+      for (const place of cachedPlaces) {
+        const dist = Math.hypot(lat - place.lat, lng - place.lng);
+        if (dist < minDist) {
+          minDist = dist;
+          closest = place;
+        }
+      }
+      
+      // If within 50m, use cached
+      if (minDist < 0.0005) {
+        // Update last_used_at and use_count
+        await supabaseClient
+          .from('place_cache')
+          .update({
+            last_used_at: new Date().toISOString(),
+            use_count: closest.use_count + 1,
+          })
+          .eq('place_id', closest.place_id);
+        
+        console.log('Using cached place:', closest.place_name);
+        return {
+          placeId: closest.place_id,
+          placeName: closest.place_name,
+          placeType: closest.place_type,
+          types: closest.types || [],
+        };
+      }
+    }
+
+    // Step 2: Not in cache, fetch from Google Places API
     const nearbyUrl = `https://places.googleapis.com/v1/places:searchNearby`;
     const response = await fetch(nearbyUrl, {
       method: 'POST',
@@ -74,7 +123,7 @@ async function fetchPlaceDetails(lat: number, lng: number): Promise<{
               latitude: lat,
               longitude: lng,
             },
-            radius: 50.0, // 50 meters radius
+            radius: 50.0,
           },
         },
         maxResultCount: 1,
@@ -82,7 +131,7 @@ async function fetchPlaceDetails(lat: number, lng: number): Promise<{
     });
 
     if (!response.ok) {
-      console.error('Places API error:', response.status, await response.text());
+      console.error('Places API error:', response.status);
       return { placeId: null, placeName: null, placeType: 'general', types: [] };
     }
 
@@ -94,14 +143,27 @@ async function fetchPlaceDetails(lat: number, lng: number): Promise<{
       const placeName = place.displayName?.text || null;
       const types: string[] = place.types || [];
       
-      // Use primaryType if available, otherwise pick most relevant from types
       let placeType = place.primaryType || 'general';
-      
-      // If no primaryType, prioritize certain types
       if (!place.primaryType && types.length > 0) {
         const priorityTypes = ['cafe', 'restaurant', 'gym', 'library', 'bar', 'park', 'shopping_mall'];
         const foundType = types.find(t => priorityTypes.includes(t));
         placeType = foundType || types[0];
+      }
+      
+      // Step 3: Cache the result
+      if (placeId) {
+        await supabaseClient
+          .from('place_cache')
+          .upsert({
+            place_id: placeId,
+            place_name: placeName,
+            place_type: placeType,
+            types: types,
+            lat: lat,
+            lng: lng,
+          });
+        
+        console.log('Cached new place:', placeName);
       }
       
       return { placeId, placeName, placeType, types };
@@ -147,7 +209,8 @@ Deno.serve(async (req) => {
       latitude, 
       longitude, 
       timestamp_utc, 
-      user_timezone_at_event 
+      user_timezone_at_event,
+      confidence = 1.0
     }: LocationRequest = await req.json();
 
     if (!latitude || !longitude) {
@@ -167,8 +230,8 @@ Deno.serve(async (req) => {
       timezone = await getTimezoneFromCoords(latitude, longitude);
     }
     
-    // Fetch place details from Google Places API (New)
-    const { placeId, placeName, placeType, types } = await fetchPlaceDetails(latitude, longitude);
+    // Get place details (from cache or API)
+    const { placeId, placeName, placeType, types } = await getPlaceDetails(supabase, latitude, longitude);
 
     console.log('Recording location visit:', { 
       userId: user.id, 
@@ -178,7 +241,7 @@ Deno.serve(async (req) => {
       timezone,
     });
 
-    // Insert location visit - trigger will auto-fill time fields
+    // Insert location visit with confidence - trigger will auto-fill time fields
     const { error: visitError } = await supabase
       .from('location_visits')
       .insert({
@@ -192,6 +255,7 @@ Deno.serve(async (req) => {
         timestamp_utc: eventTimestampISO,
         user_timezone_at_event: timezone,
         visited_at: eventTimestampISO,
+        confidence: confidence,
       });
 
     if (visitError) {

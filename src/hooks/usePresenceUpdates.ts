@@ -10,6 +10,12 @@ interface UsePresenceUpdatesOptions {
   location: GeolocationData | null;
 }
 
+interface PingBuffer {
+  location: GeolocationData;
+  timestamp: number;
+  confidence: number;
+}
+
 /**
  * Hook to manage presence updates with intelligent throttling
  * Publishes to Supabase when:
@@ -25,6 +31,50 @@ export const usePresenceUpdates = ({ enabled, location }: UsePresenceUpdatesOpti
     timestamp: number;
   } | null>(null);
   const publishTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const pingBufferRef = useRef<PingBuffer[]>([]);
+  const batchTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Calculate confidence based on GPS accuracy and speed
+  const calculateConfidence = useCallback((locationData: GeolocationData): number => {
+    let confidence = 1.0;
+    
+    // Reduce confidence for poor GPS accuracy
+    if (locationData.accuracy > 100) {
+      confidence *= 0.5;
+    } else if (locationData.accuracy > 50) {
+      confidence *= 0.7;
+    } else if (locationData.accuracy > 20) {
+      confidence *= 0.9;
+    }
+    
+    // Reduce confidence if moving fast (less stable readings)
+    const speed = locationData.speed ?? 0;
+    if (speed > 5) { // > 18 km/h
+      confidence *= 0.8;
+    }
+    
+    return Math.max(0.1, Math.min(1.0, confidence));
+  }, []);
+
+  // Deduplicate: check if ping is too similar to recent pings
+  const isDuplicate = useCallback((newLocation: GeolocationData): boolean => {
+    const recent = pingBufferRef.current.slice(-3);
+    for (const buffered of recent) {
+      const distance = distanceMeters(
+        buffered.location.lat,
+        buffered.location.lng,
+        newLocation.lat,
+        newLocation.lng
+      );
+      const timeDiff = Math.abs(Date.now() - buffered.timestamp) / 1000;
+      
+      // If within 10m and within 30 seconds, it's a duplicate
+      if (distance < 10 && timeDiff < 30) {
+        return true;
+      }
+    }
+    return false;
+  }, []);
 
   const shouldPublish = useCallback((newLocation: GeolocationData): boolean => {
     if (!lastPublishedRef.current) {
@@ -129,39 +179,122 @@ export const usePresenceUpdates = ({ enabled, location }: UsePresenceUpdatesOpti
     }
   }, [user]);
 
-  // Main effect: handle location updates
+  // Batch publish buffered pings
+  const publishBatch = useCallback(async () => {
+    if (pingBufferRef.current.length === 0 || !user) return;
+
+    const batch = [...pingBufferRef.current];
+    pingBufferRef.current = [];
+
+    // Use most recent ping for presence update
+    const latest = batch[batch.length - 1];
+    const geohash = toGeohash(latest.location.lat, latest.location.lng);
+
+    try {
+      // Update presence table
+      const { error: presenceError } = await supabase
+        .from('presence')
+        .upsert({
+          user_id: user.id,
+          lat: latest.location.lat,
+          lng: latest.location.lng,
+          geohash: geohash,
+          updated_at: new Date().toISOString(),
+        });
+
+      if (presenceError) {
+        console.error('[Presence] Batch error:', presenceError);
+        return;
+      }
+
+      // Update profile location
+      await supabase
+        .from('profiles')
+        .update({
+          lat: latest.location.lat,
+          lng: latest.location.lng,
+          geohash: geohash,
+          location_accuracy: latest.location.accuracy,
+          location_updated_at: new Date().toISOString(),
+        })
+        .eq('id', user.id);
+
+      lastPublishedRef.current = {
+        lat: latest.location.lat,
+        lng: latest.location.lng,
+        timestamp: Date.now(),
+      };
+
+      if (FEATURE_FLAGS.debugPresenceLogging) {
+        console.log(`[Presence] Published batch of ${batch.length} pings`, {
+          avgConfidence: (batch.reduce((sum, p) => sum + p.confidence, 0) / batch.length).toFixed(2),
+        });
+      }
+    } catch (error) {
+      console.error('[Presence] Batch publish error:', error);
+    }
+  }, [user]);
+
+  // Main effect: handle location updates with batching
   useEffect(() => {
     if (!enabled || !location || !user) {
       return;
     }
 
-    // Clear any pending timeout
-    if (publishTimeoutRef.current) {
-      clearTimeout(publishTimeoutRef.current);
+    // Skip duplicates
+    if (isDuplicate(location)) {
+      return;
     }
 
-    // Debounce: wait 5 seconds before checking if we should publish
-    publishTimeoutRef.current = setTimeout(() => {
-      if (shouldPublish(location)) {
-        publishPresence(location);
-      }
-    }, 5000);
+    // Calculate confidence
+    const confidence = calculateConfidence(location);
+
+    // Add to buffer
+    pingBufferRef.current.push({
+      location,
+      timestamp: Date.now(),
+      confidence,
+    });
+
+    // Keep buffer size reasonable
+    if (pingBufferRef.current.length > 10) {
+      pingBufferRef.current.shift();
+    }
+
+    // Clear existing batch timer
+    if (batchTimerRef.current) {
+      clearTimeout(batchTimerRef.current);
+    }
+
+    // Check if should publish immediately
+    if (shouldPublish(location)) {
+      publishBatch();
+    } else {
+      // Otherwise, schedule batch publish in 30 seconds
+      batchTimerRef.current = setTimeout(() => {
+        publishBatch();
+      }, 30000);
+    }
 
     return () => {
-      if (publishTimeoutRef.current) {
-        clearTimeout(publishTimeoutRef.current);
+      if (batchTimerRef.current) {
+        clearTimeout(batchTimerRef.current);
       }
     };
-  }, [enabled, location, user, shouldPublish, publishPresence]);
+  }, [enabled, location, user, shouldPublish, isDuplicate, calculateConfidence, publishBatch]);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (publishTimeoutRef.current) {
-        clearTimeout(publishTimeoutRef.current);
+      if (batchTimerRef.current) {
+        clearTimeout(batchTimerRef.current);
+      }
+      // Flush any remaining pings
+      if (pingBufferRef.current.length > 0) {
+        publishBatch();
       }
     };
-  }, []);
+  }, [publishBatch]);
 
   return {
     lastPublished: lastPublishedRef.current,
